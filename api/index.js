@@ -1,6 +1,6 @@
 export const config = {
   runtime: 'edge',
-  regions: ['iad1'],
+  regions: ['sfo1'],
 };
 
 export default async function handler(request) {
@@ -9,7 +9,7 @@ export default async function handler(request) {
 
   if (!target) {
     // Health check / ping fallback
-    return new Response(JSON.stringify({ status: "ok", service: "vercel-ai-relay", region: "iad1" }), {
+    return new Response(JSON.stringify({ status: "ok", service: "vercel-ai-relay", region: "sfo1" }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
