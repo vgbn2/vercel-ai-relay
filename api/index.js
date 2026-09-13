@@ -8,8 +8,9 @@ export default async function handler(request) {
   const relayPath = request.headers.get("x-relay-path") || "/";
 
   if (!target) {
-    return new Response(JSON.stringify({ error: "Missing x-relay-target header" }), {
-      status: 400,
+    // Health check / ping fallback
+    return new Response(JSON.stringify({ status: "ok", service: "vercel-ai-relay", region: "iad1" }), {
+      status: 200,
       headers: { "content-type": "application/json" },
     });
   }
