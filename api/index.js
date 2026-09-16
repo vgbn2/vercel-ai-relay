@@ -3,6 +3,36 @@ export const config = {
   regions: ['sfo1'],
 };
 
+// Default allowed AI provider hostnames
+const DEFAULT_ALLOWED_DOMAINS = new Set([
+  "api.anthropic.com",
+  "api.openai.com",
+  "generativelanguage.googleapis.com",
+  "api.deepseek.com",
+  "openrouter.ai",
+  "api.groq.com",
+  "api.mistral.ai",
+]);
+
+function isDomainAllowed(targetUrl) {
+  try {
+    const parsed = new URL(targetUrl);
+    if (parsed.protocol !== "https:") {
+      return false;
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (DEFAULT_ALLOWED_DOMAINS.has(host)) {
+      return true;
+    }
+    const extraDomains = process.env.ALLOWED_DOMAINS
+      ? process.env.ALLOWED_DOMAINS.split(",").map(d => d.trim().toLowerCase())
+      : [];
+    return extraDomains.includes(host);
+  } catch {
+    return false;
+  }
+}
+
 export default async function handler(request) {
   const target = request.headers.get("x-relay-target");
   const relayPath = request.headers.get("x-relay-path") || "/";
@@ -15,10 +45,35 @@ export default async function handler(request) {
     });
   }
 
+  // Authentication gate: enforce RELAY_SECRET_KEY when configured
+  const expectedKey = process.env.RELAY_SECRET_KEY;
+  if (expectedKey) {
+    const authHeader = request.headers.get("authorization") || "";
+    const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+    const customKey = request.headers.get("x-relay-key");
+
+    if (bearerToken !== expectedKey && customKey !== expectedKey) {
+      return new Response(JSON.stringify({ error: "Unauthorized: invalid or missing relay key" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      });
+    }
+  }
+
   const targetUrl = target.replace(/\/$/, "") + relayPath;
+
+  // SSRF Protection: target domain allowlist check
+  if (!isDomainAllowed(targetUrl)) {
+    return new Response(JSON.stringify({ error: "Forbidden: target domain is not in the allowlist" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const newHeaders = new Headers(request.headers);
   newHeaders.delete("x-relay-target");
   newHeaders.delete("x-relay-path");
+  newHeaders.delete("x-relay-key");
   newHeaders.delete("host");
 
   try {
