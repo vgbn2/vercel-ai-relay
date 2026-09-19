@@ -14,6 +14,55 @@ const DEFAULT_ALLOWED_DOMAINS = new Set([
   "api.mistral.ai",
 ]);
 
+// Map of provider hostnames to server-side environment variables and injection rules
+const PROVIDER_AUTH_MAP = {
+  "api.anthropic.com": {
+    envVar: "ANTHROPIC_API_KEY",
+    inject: (headers, key) => {
+      headers.set("x-api-key", key);
+      if (!headers.has("anthropic-version")) {
+        headers.set("anthropic-version", "2023-06-01");
+      }
+    },
+  },
+  "api.openai.com": {
+    envVar: "OPENAI_API_KEY",
+    inject: (headers, key) => {
+      headers.set("authorization", `Bearer ${key}`);
+    },
+  },
+  "generativelanguage.googleapis.com": {
+    envVar: "GEMINI_API_KEY",
+    inject: (headers, key) => {
+      headers.set("x-goog-api-key", key);
+    },
+  },
+  "api.deepseek.com": {
+    envVar: "DEEPSEEK_API_KEY",
+    inject: (headers, key) => {
+      headers.set("authorization", `Bearer ${key}`);
+    },
+  },
+  "openrouter.ai": {
+    envVar: "OPENROUTER_API_KEY",
+    inject: (headers, key) => {
+      headers.set("authorization", `Bearer ${key}`);
+    },
+  },
+  "api.groq.com": {
+    envVar: "GROQ_API_KEY",
+    inject: (headers, key) => {
+      headers.set("authorization", `Bearer ${key}`);
+    },
+  },
+  "api.mistral.ai": {
+    envVar: "MISTRAL_API_KEY",
+    inject: (headers, key) => {
+      headers.set("authorization", `Bearer ${key}`);
+    },
+  },
+};
+
 function isDomainAllowed(targetUrl) {
   try {
     const parsed = new URL(targetUrl);
@@ -39,7 +88,12 @@ export default async function handler(request) {
 
   if (!target) {
     // Health check / ping fallback
-    return new Response(JSON.stringify({ status: "ok", service: "vercel-ai-relay", region: "sfo1" }), {
+    return new Response(JSON.stringify({
+      status: "ok",
+      service: "vercel-ai-relay",
+      mode: "zero-trust-credential-proxy",
+      region: "sfo1"
+    }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
@@ -70,11 +124,26 @@ export default async function handler(request) {
     });
   }
 
+  const parsedTarget = new URL(targetUrl);
+  const targetHost = parsedTarget.hostname.toLowerCase();
+
   const newHeaders = new Headers(request.headers);
   newHeaders.delete("x-relay-target");
   newHeaders.delete("x-relay-path");
   newHeaders.delete("x-relay-key");
   newHeaders.delete("host");
+
+  // Zero-Trust Credential Injection:
+  // If server-side provider key is configured, strip incoming client auth and inject the server secret.
+  const providerConfig = PROVIDER_AUTH_MAP[targetHost];
+  if (providerConfig && process.env[providerConfig.envVar]) {
+    const serverKey = process.env[providerConfig.envVar];
+    // Remove client-supplied auth to prevent leaking or conflicting headers
+    newHeaders.delete("authorization");
+    newHeaders.delete("x-api-key");
+    newHeaders.delete("x-goog-api-key");
+    providerConfig.inject(newHeaders, serverKey);
+  }
 
   try {
     const response = await fetch(targetUrl, {

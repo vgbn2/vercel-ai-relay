@@ -1,0 +1,11 @@
+{
+  "name": "vercel-ai-relay",
+  "version": "1.1.0",
+  "description": "Zero-Trust Credential Injection AI Relay on Vercel Edge Runtime",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/test_relay_injection.mjs"
+  },
+  "keywords": ["ai", "relay", "zero-trust", "proxy", "vercel-edge"],
+  "license": "MIT"
+}
