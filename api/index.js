@@ -20,10 +20,17 @@ const DEFAULT_ALLOWED_DOMAINS = new Set([
   "api.voyageai.com",
   "api.github.com",
   "github.com",
+  "api.individual.githubcopilot.com",
+  "api.githubcopilot.com",
   "cloudaicompanion.googleapis.com",
   "cloudcode-pa.googleapis.com",
+  "daily-cloudcode-pa.googleapis.com",
   "aiplatform.googleapis.com",
   "oauth2.googleapis.com",
+  "q.us-east-1.amazonaws.com",
+  "codewhisperer.us-east-1.amazonaws.com",
+  "runtime.us-east-1.kiro.dev",
+  "api2.cursor.sh",
 ]);
 
 // Map of provider hostnames to server-side environment variables and injection rules

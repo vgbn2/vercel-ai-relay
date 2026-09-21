@@ -261,6 +261,18 @@ async function runTests() {
         expectedUrl: 'https://cloudaicompanion.googleapis.com/v1/projects/demo:retrieveUserQuota',
       },
       {
+        path: '/proxy/daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
+        expectedUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
+      },
+      {
+        path: '/proxy/daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
+        expectedUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
+      },
+      {
+        path: '/proxy/api.individual.githubcopilot.com/models',
+        expectedUrl: 'https://api.individual.githubcopilot.com/models',
+      },
+      {
         path: '/proxy/api.github.com/copilot_internal/v2/token',
         expectedUrl: 'https://api.github.com/copilot_internal/v2/token',
       },
