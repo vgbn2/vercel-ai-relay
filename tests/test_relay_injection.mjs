@@ -219,7 +219,36 @@ async function runTests() {
     console.log('✓ Auth gate with RELAY_SECRET_KEY passed');
   }
 
-  console.log('\nAll 7 Expanded Zero-Trust Relay & Latency Optimizer tests passed successfully!');
+  // Test 8: 9Router Proxy Pool Healthcheck Probe (httpbin.org/get)
+  {
+    const originalFetch = globalThis.fetch;
+    let interceptedUrl = null;
+
+    globalThis.fetch = async (url) => {
+      interceptedUrl = url;
+      return new Response(JSON.stringify({ origin: '1.2.3.4' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+
+    const req = new Request('http://localhost/', {
+      method: 'GET',
+      headers: {
+        'x-relay-target': 'https://httpbin.org',
+        'x-relay-path': '/get',
+      },
+    });
+
+    const res = await handler(req);
+    assert.strictEqual(res.status, 200, '9Router healthcheck probe to httpbin.org should return 200');
+    assert.strictEqual(interceptedUrl, 'https://httpbin.org/get');
+
+    globalThis.fetch = originalFetch;
+    console.log('✓ 9Router healthcheck probe to httpbin.org passed');
+  }
+
+  console.log('\nAll 8 Expanded Zero-Trust Relay & Latency Optimizer tests passed successfully!');
 }
 
 runTests().catch((err) => {

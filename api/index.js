@@ -3,8 +3,9 @@ export const config = {
   runtime: 'edge',
 };
 
-// Default allowed AI provider hostnames
+// Default allowed AI provider hostnames and diagnostic probes (e.g. 9Router test target httpbin.org)
 const DEFAULT_ALLOWED_DOMAINS = new Set([
+  "httpbin.org",
   "api.anthropic.com",
   "api.openai.com",
   "generativelanguage.googleapis.com",
