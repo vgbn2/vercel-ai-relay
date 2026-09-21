@@ -30,6 +30,9 @@ Simply point your SDK's `baseURL` to the relay:
 - Together AI: `https://<relay-domain>/together`
 - Perplexity: `https://<relay-domain>/perplexity`
 - Voyage AI: `https://<relay-domain>/voyage`
+- GitHub / Copilot: `https://<relay-domain>/github` (e.g. `/github/user`)
+- Google Cloud Companion / Antigravity: `https://<relay-domain>/google-companion`
+- Google Vertex AI: `https://<relay-domain>/vertex`
 - Generic Proxy: `https://<relay-domain>/proxy/<domain>/<path>`
 
 ### 2. Header-Based Routing (Gateway Proxy)
@@ -60,10 +63,14 @@ Configure in Vercel Project Environment Variables:
 - `VOYAGE_API_KEY` (`Authorization: Bearer <key>`)
 
 ### 3. Target Allowlist
-Default allowed AI hosts:
+Default allowed AI and Quota Tracking hosts:
 - `api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`
 - `api.deepseek.com`, `openrouter.ai`, `api.groq.com`, `api.mistral.ai`
 - `api.x.ai`, `api.cohere.com`, `api.together.xyz`, `api.perplexity.ai`, `api.voyageai.com`
+- `api.github.com`, `github.com` (GitHub Copilot usage & token management)
+- `cloudaicompanion.googleapis.com`, `cloudcode-pa.googleapis.com` (Antigravity & Cloud AI quota)
+- `aiplatform.googleapis.com`, `oauth2.googleapis.com` (Vertex AI & Google Auth)
+- `httpbin.org` (9Router gateway diagnostic probe)
 
 Set `ALLOWED_DOMAINS` to add comma-separated HTTPS hostnames.
 

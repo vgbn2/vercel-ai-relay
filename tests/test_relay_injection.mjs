@@ -248,7 +248,47 @@ async function runTests() {
     console.log('✓ 9Router healthcheck probe to httpbin.org passed');
   }
 
-  console.log('\nAll 8 Expanded Zero-Trust Relay & Latency Optimizer tests passed successfully!');
+  // Test 9: GitHub Copilot & Google Cloud Companion Allowlist Verification
+  {
+    const originalFetch = globalThis.fetch;
+    const testTargets = [
+      {
+        path: '/github/user',
+        expectedUrl: 'https://api.github.com/user',
+      },
+      {
+        path: '/google-companion/v1/projects/demo:retrieveUserQuota',
+        expectedUrl: 'https://cloudaicompanion.googleapis.com/v1/projects/demo:retrieveUserQuota',
+      },
+      {
+        path: '/proxy/api.github.com/copilot_internal/v2/token',
+        expectedUrl: 'https://api.github.com/copilot_internal/v2/token',
+      },
+    ];
+
+    for (const tt of testTargets) {
+      let interceptedUrl = null;
+      globalThis.fetch = async (url) => {
+        interceptedUrl = url;
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      };
+
+      const req = new Request(`http://localhost${tt.path}`, {
+        method: 'GET',
+      });
+      const res = await handler(req);
+      assert.strictEqual(res.status, 200, `Target ${tt.path} should return 200`);
+      assert.strictEqual(interceptedUrl, tt.expectedUrl);
+    }
+
+    globalThis.fetch = originalFetch;
+    console.log('✓ GitHub API & Google Companion allowlist verification passed');
+  }
+
+  console.log('\nAll 9 Expanded Zero-Trust Relay & Latency Optimizer tests passed successfully!');
 }
 
 runTests().catch((err) => {

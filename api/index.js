@@ -3,7 +3,7 @@ export const config = {
   runtime: 'edge',
 };
 
-// Default allowed AI provider hostnames and diagnostic probes (e.g. 9Router test target httpbin.org)
+// Default allowed AI provider hostnames, quota tracking endpoints, and diagnostic probes (e.g. 9Router test target httpbin.org)
 const DEFAULT_ALLOWED_DOMAINS = new Set([
   "httpbin.org",
   "api.anthropic.com",
@@ -18,6 +18,12 @@ const DEFAULT_ALLOWED_DOMAINS = new Set([
   "api.together.xyz",
   "api.perplexity.ai",
   "api.voyageai.com",
+  "api.github.com",
+  "github.com",
+  "cloudaicompanion.googleapis.com",
+  "cloudcode-pa.googleapis.com",
+  "aiplatform.googleapis.com",
+  "oauth2.googleapis.com",
 ]);
 
 // Map of provider hostnames to server-side environment variables and injection rules
@@ -113,6 +119,9 @@ const PATH_PREFIX_MAP = {
   "/together": { target: "https://api.together.xyz", stripPrefix: "/together" },
   "/perplexity": { target: "https://api.perplexity.ai", stripPrefix: "/perplexity" },
   "/voyage": { target: "https://api.voyageai.com", stripPrefix: "/voyage" },
+  "/github": { target: "https://api.github.com", stripPrefix: "/github" },
+  "/google-companion": { target: "https://cloudaicompanion.googleapis.com", stripPrefix: "/google-companion" },
+  "/vertex": { target: "https://aiplatform.googleapis.com", stripPrefix: "/vertex" },
 };
 
 // Hop-by-hop and client telemetry headers to strip before calling upstream to minimize packet size & token overhead
