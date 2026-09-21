@@ -1,6 +1,6 @@
+// ponytail: edge zero-trust AI credential relay & latency optimizer
 export const config = {
   runtime: 'edge',
-  regions: ['sfo1'],
 };
 
 // Default allowed AI provider hostnames
@@ -12,6 +12,11 @@ const DEFAULT_ALLOWED_DOMAINS = new Set([
   "openrouter.ai",
   "api.groq.com",
   "api.mistral.ai",
+  "api.x.ai",
+  "api.cohere.com",
+  "api.together.xyz",
+  "api.perplexity.ai",
+  "api.voyageai.com",
 ]);
 
 // Map of provider hostnames to server-side environment variables and injection rules
@@ -61,6 +66,87 @@ const PROVIDER_AUTH_MAP = {
       headers.set("authorization", `Bearer ${key}`);
     },
   },
+  "api.x.ai": {
+    envVar: "XAI_API_KEY",
+    inject: (headers, key) => {
+      headers.set("authorization", `Bearer ${key}`);
+    },
+  },
+  "api.cohere.com": {
+    envVar: "COHERE_API_KEY",
+    inject: (headers, key) => {
+      headers.set("authorization", `Bearer ${key}`);
+    },
+  },
+  "api.together.xyz": {
+    envVar: "TOGETHER_API_KEY",
+    inject: (headers, key) => {
+      headers.set("authorization", `Bearer ${key}`);
+    },
+  },
+  "api.perplexity.ai": {
+    envVar: "PERPLEXITY_API_KEY",
+    inject: (headers, key) => {
+      headers.set("authorization", `Bearer ${key}`);
+    },
+  },
+  "api.voyageai.com": {
+    envVar: "VOYAGE_API_KEY",
+    inject: (headers, key) => {
+      headers.set("authorization", `Bearer ${key}`);
+    },
+  },
+};
+
+// Shorthand path prefix to upstream mapping for SDK baseURL compatibility
+const PATH_PREFIX_MAP = {
+  "/anthropic": { target: "https://api.anthropic.com", stripPrefix: "/anthropic" },
+  "/openai": { target: "https://api.openai.com", stripPrefix: "/openai" },
+  "/gemini": { target: "https://generativelanguage.googleapis.com", stripPrefix: "/gemini" },
+  "/deepseek": { target: "https://api.deepseek.com", stripPrefix: "/deepseek" },
+  "/openrouter": { target: "https://openrouter.ai", stripPrefix: "/openrouter" },
+  "/groq": { target: "https://api.groq.com", stripPrefix: "/groq" },
+  "/mistral": { target: "https://api.mistral.ai", stripPrefix: "/mistral" },
+  "/xai": { target: "https://api.x.ai", stripPrefix: "/xai" },
+  "/cohere": { target: "https://api.cohere.com", stripPrefix: "/cohere" },
+  "/together": { target: "https://api.together.xyz", stripPrefix: "/together" },
+  "/perplexity": { target: "https://api.perplexity.ai", stripPrefix: "/perplexity" },
+  "/voyage": { target: "https://api.voyageai.com", stripPrefix: "/voyage" },
+};
+
+// Hop-by-hop and client telemetry headers to strip before calling upstream to minimize packet size & token overhead
+const HEADERS_TO_STRIP = [
+  "x-relay-target",
+  "x-relay-path",
+  "x-relay-key",
+  "host",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-vercel-id",
+  "x-vercel-ip-country",
+  "x-vercel-ip-country-region",
+  "x-vercel-ip-city",
+  "x-vercel-ip-latitude",
+  "x-vercel-ip-longitude",
+  "x-vercel-ip-timezone",
+  "sec-ch-ua",
+  "sec-ch-ua-mobile",
+  "sec-ch-ua-platform",
+  "sec-fetch-dest",
+  "sec-fetch-mode",
+  "sec-fetch-site",
+  "sec-fetch-user",
+  "cookie",
+  "connection",
+  "keep-alive",
+  "transfer-encoding",
+];
+
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD",
+  "access-control-allow-headers": "*",
+  "access-control-max-age": "86400",
 };
 
 function isDomainAllowed(targetUrl) {
@@ -82,20 +168,92 @@ function isDomainAllowed(targetUrl) {
   }
 }
 
-export default async function handler(request) {
-  const target = request.headers.get("x-relay-target");
-  const relayPath = request.headers.get("x-relay-path") || "/";
+function resolveRouting(request) {
+  const headerTarget = request.headers.get("x-relay-target");
+  const headerPath = request.headers.get("x-relay-path");
+  const incomingUrl = new URL(request.url);
 
-  if (!target) {
-    // Health check / ping fallback
+  if (headerTarget) {
+    let path = headerPath || incomingUrl.pathname;
+    if (incomingUrl.search && !path.includes("?")) {
+      path += incomingUrl.search;
+    }
+    return {
+      targetUrl: headerTarget.replace(/\/$/, "") + (path.startsWith("/") ? path : `/${path}`),
+      isHealthCheck: false,
+    };
+  }
+
+  // Path prefix routing for SDK compatibility (e.g. /anthropic/v1/messages)
+  const pathname = incomingUrl.pathname;
+
+  for (const [prefix, mapping] of Object.entries(PATH_PREFIX_MAP)) {
+    if (pathname === prefix || pathname.startsWith(prefix + "/")) {
+      const remainingPath = pathname.slice(prefix.length) || "/";
+      const fullPath = remainingPath + incomingUrl.search;
+      return {
+        targetUrl: mapping.target + fullPath,
+        isHealthCheck: false,
+      };
+    }
+  }
+
+  // Generic /proxy/https/domain.com/path or /proxy/domain.com/path
+  if (pathname.startsWith("/proxy/")) {
+    const rawTarget = pathname.slice(7);
+    const slashIdx = rawTarget.indexOf("/");
+    const domain = (slashIdx === -1 ? rawTarget : rawTarget.slice(0, slashIdx)).replace(/^https?:\/\//, "");
+    const subPath = (slashIdx === -1 ? "/" : rawTarget.slice(slashIdx)) + incomingUrl.search;
+    return {
+      targetUrl: `https://${domain}${subPath}`,
+      isHealthCheck: false,
+    };
+  }
+
+  // Default /v1/chat/completions -> OpenAI compatible
+  if (pathname.startsWith("/v1/")) {
+    return {
+      targetUrl: `https://api.openai.com${pathname}${incomingUrl.search}`,
+      isHealthCheck: false,
+    };
+  }
+
+  // Health check endpoint
+  return {
+    targetUrl: null,
+    isHealthCheck: true,
+  };
+}
+
+export default async function handler(request) {
+  // CORS Preflight Fast-Path (0ms upstream round-trip)
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: CORS_HEADERS,
+    });
+  }
+
+  const { targetUrl, isHealthCheck } = resolveRouting(request);
+
+  if (isHealthCheck || !targetUrl) {
     return new Response(JSON.stringify({
       status: "ok",
       service: "vercel-ai-relay",
       mode: "zero-trust-credential-proxy",
-      region: "sfo1"
+      optimized: {
+        edgeGlobal: true,
+        corsFastPath: true,
+        streamingPassThrough: true,
+        tokenEfficiency: "header-sanitized",
+        supportedPrefixes: Object.keys(PATH_PREFIX_MAP),
+      },
     }), {
       status: 200,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...CORS_HEADERS,
+      },
     });
   }
 
@@ -109,32 +267,36 @@ export default async function handler(request) {
     if (bearerToken !== expectedKey && customKey !== expectedKey) {
       return new Response(JSON.stringify({ error: "Unauthorized: invalid or missing relay key" }), {
         status: 401,
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...CORS_HEADERS,
+        },
       });
     }
   }
-
-  const targetUrl = target.replace(/\/$/, "") + relayPath;
 
   // SSRF Protection: target domain allowlist check
   if (!isDomainAllowed(targetUrl)) {
     return new Response(JSON.stringify({ error: "Forbidden: target domain is not in the allowlist" }), {
       status: 403,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...CORS_HEADERS,
+      },
     });
   }
 
   const parsedTarget = new URL(targetUrl);
   const targetHost = parsedTarget.hostname.toLowerCase();
 
+  // Strip unnecessary headers to minimize upstream payload and latency
   const newHeaders = new Headers(request.headers);
-  newHeaders.delete("x-relay-target");
-  newHeaders.delete("x-relay-path");
-  newHeaders.delete("x-relay-key");
-  newHeaders.delete("host");
+  for (const headerName of HEADERS_TO_STRIP) {
+    newHeaders.delete(headerName);
+  }
 
   // Zero-Trust Credential Injection:
-  // If server-side provider key is configured, strip incoming client auth and inject the server secret.
+  // If server-side provider key is configured, strip incoming client auth and inject server secret.
   const providerConfig = PROVIDER_AUTH_MAP[targetHost];
   if (providerConfig && process.env[providerConfig.envVar]) {
     const serverKey = process.env[providerConfig.envVar];
@@ -145,6 +307,8 @@ export default async function handler(request) {
     providerConfig.inject(newHeaders, serverKey);
   }
 
+  const startTime = Date.now();
+
   try {
     const response = await fetch(targetUrl, {
       method: request.method,
@@ -153,14 +317,40 @@ export default async function handler(request) {
       duplex: "half",
     });
 
+    const durationMs = Date.now() - startTime;
+    const responseHeaders = new Headers(response.headers);
+
+    // Apply CORS headers
+    responseHeaders.set("access-control-allow-origin", "*");
+    responseHeaders.set("access-control-expose-headers", "*");
+
+    // SSE / Streaming acceleration: prevent intermediate proxy buffering
+    const contentType = responseHeaders.get("content-type") || "";
+    if (contentType.includes("text/event-stream")) {
+      responseHeaders.set("x-accel-buffering", "no");
+      responseHeaders.set("cache-control", "no-cache, no-transform");
+    }
+
+    // Performance telemetry
+    responseHeaders.set("server-timing", `upstream;dur=${durationMs}`);
+    responseHeaders.set("x-relay-latency-ms", durationMs.toString());
+
     return new Response(response.body, {
       status: response.status,
-      headers: response.headers,
+      headers: responseHeaders,
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    const durationMs = Date.now() - startTime;
+    return new Response(JSON.stringify({
+      error: error.message,
+      target: targetHost,
+    }), {
       status: 502,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "server-timing": `upstream;dur=${durationMs}`,
+        ...CORS_HEADERS,
+      },
     });
   }
 }
