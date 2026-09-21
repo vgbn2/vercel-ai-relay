@@ -311,12 +311,17 @@ export default async function handler(request) {
   const startTime = Date.now();
 
   try {
-    const response = await fetch(targetUrl, {
+    const isBodyAllowed = request.method !== "GET" && request.method !== "HEAD";
+    const fetchOptions = {
       method: request.method,
       headers: newHeaders,
-      body: request.method !== "GET" && request.method !== "HEAD" ? request.body : undefined,
-      duplex: "half",
-    });
+    };
+    if (isBodyAllowed) {
+      fetchOptions.body = request.body;
+      fetchOptions.duplex = "half";
+    }
+
+    const response = await fetch(targetUrl, fetchOptions);
 
     const durationMs = Date.now() - startTime;
     const responseHeaders = new Headers(response.headers);
