@@ -300,7 +300,159 @@ async function runTests() {
     console.log('✓ GitHub API & Google Companion allowlist verification passed');
   }
 
-  console.log('\nAll 9 Expanded Zero-Trust Relay & Latency Optimizer tests passed successfully!');
+  // Test 10: Generic /proxy/ with https://, https/, or plain domain
+  {
+    const originalFetch = globalThis.fetch;
+    const proxyFormats = [
+      { path: '/proxy/https/httpbin.org/get?tag=1', expected: 'https://httpbin.org/get?tag=1' },
+      { path: '/proxy/https:/httpbin.org/get?tag=2', expected: 'https://httpbin.org/get?tag=2' },
+      { path: '/proxy/https://httpbin.org/get?tag=3', expected: 'https://httpbin.org/get?tag=3' },
+      { path: '/proxy/httpbin.org/get?tag=4', expected: 'https://httpbin.org/get?tag=4' },
+    ];
+
+    for (const pf of proxyFormats) {
+      let interceptedUrl = null;
+      globalThis.fetch = async (url) => {
+        interceptedUrl = url;
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      };
+
+      const req = new Request(`http://localhost${pf.path}`, { method: 'GET' });
+      const res = await handler(req);
+      assert.strictEqual(res.status, 200, `${pf.path} should return 200`);
+      assert.strictEqual(interceptedUrl, pf.expected);
+    }
+
+    globalThis.fetch = originalFetch;
+    console.log('✓ /proxy/ https prefix variations normalized and verified');
+  }
+
+  // Test 11: /v1/messages and /v1/complete Anthropic routing & Bearer conversion
+  {
+    const originalFetch = globalThis.fetch;
+    let interceptedUrl = null;
+    let interceptedHeaders = null;
+
+    globalThis.fetch = async (url, options) => {
+      interceptedUrl = url;
+      interceptedHeaders = options.headers;
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+
+    // Client calls /v1/messages with Authorization: Bearer sk-ant-123
+    const req = new Request('http://localhost/v1/messages', {
+      method: 'POST',
+      headers: {
+        'authorization': 'Bearer sk-ant-123',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [] }),
+    });
+
+    const res = await handler(req);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(interceptedUrl, 'https://api.anthropic.com/v1/messages');
+    assert.strictEqual(interceptedHeaders.get('x-api-key'), 'sk-ant-123');
+    assert.strictEqual(interceptedHeaders.get('authorization'), null, 'Authorization bearer header stripped');
+    assert.strictEqual(interceptedHeaders.get('anthropic-version'), '2023-06-01', 'Default anthropic-version injected');
+
+    globalThis.fetch = originalFetch;
+    console.log('✓ /v1/messages routed to Anthropic with Bearer-to-x-api-key conversion passed');
+  }
+
+  // Test 12: Expanded prefixes (/cloudcode, /amazon-q, /cursor, /kiro)
+  {
+    const originalFetch = globalThis.fetch;
+    const extraPrefixTests = [
+      { path: '/cloudcode/v1internal:check', expectedUrl: 'https://cloudcode-pa.googleapis.com/v1internal:check' },
+      { path: '/amazon-q/generate', expectedUrl: 'https://codewhisperer.us-east-1.amazonaws.com/generate' },
+      { path: '/cursor/v1/models', expectedUrl: 'https://api2.cursor.sh/v1/models' },
+      { path: '/kiro/session', expectedUrl: 'https://runtime.us-east-1.kiro.dev/session' },
+    ];
+
+    for (const ept of extraPrefixTests) {
+      let interceptedUrl = null;
+      globalThis.fetch = async (url) => {
+        interceptedUrl = url;
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      };
+
+      const req = new Request(`http://localhost${ept.path}`, { method: 'POST' });
+      const res = await handler(req);
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(interceptedUrl, ept.expectedUrl);
+    }
+
+    globalThis.fetch = originalFetch;
+    console.log('✓ Expanded prefixes (cloudcode, amazon-q, cursor, kiro) passed');
+  }
+
+  // Test 13: Header-based routing without x-relay-path strips shorthand prefix
+  {
+    const originalFetch = globalThis.fetch;
+    let interceptedUrl = null;
+
+    globalThis.fetch = async (url) => {
+      interceptedUrl = url;
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+
+    const req = new Request('http://localhost/anthropic/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-relay-target': 'https://api.anthropic.com',
+      },
+    });
+
+    const res = await handler(req);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(interceptedUrl, 'https://api.anthropic.com/v1/messages', 'Shorthand prefix /anthropic stripped');
+
+    globalThis.fetch = originalFetch;
+    console.log('✓ Header-based routing without x-relay-path prefix stripping passed');
+  }
+
+  // Test 14: Bodyless POST request handling (null body does not crash duplex)
+  {
+    const originalFetch = globalThis.fetch;
+    let interceptedBody = undefined;
+    let interceptedDuplex = undefined;
+
+    globalThis.fetch = async (url, options) => {
+      interceptedBody = options.body;
+      interceptedDuplex = options.duplex;
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+
+    const req = new Request('http://localhost/openai/v1/models', {
+      method: 'POST',
+    });
+
+    const res = await handler(req);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(interceptedBody, undefined, 'Body is undefined for bodyless request');
+    assert.strictEqual(interceptedDuplex, undefined, 'Duplex is not set for bodyless request');
+
+    globalThis.fetch = originalFetch;
+    console.log('✓ Bodyless request safe fetch options passed');
+  }
+
+  console.log('\nAll 14 Expanded Zero-Trust Relay & Latency Optimizer tests passed successfully!');
 }
 
 runTests().catch((err) => {

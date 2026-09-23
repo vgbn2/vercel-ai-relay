@@ -18,8 +18,8 @@ Provides zero-trust credential isolation, SSE streaming acceleration, header san
 
 ### 1. Path-Based Routing (Standard AI SDK BaseURL)
 Simply point your SDK's `baseURL` to the relay:
-- Anthropic: `https://<relay-domain>/anthropic` (e.g. `/anthropic/v1/messages`)
-- OpenAI: `https://<relay-domain>/openai` or `https://<relay-domain>/v1`
+- Anthropic: `https://<relay-domain>/anthropic` (or standard `https://<relay-domain>/v1/messages`)
+- OpenAI: `https://<relay-domain>/openai` or `https://<relay-domain>/v1/chat/completions`
 - Gemini: `https://<relay-domain>/gemini`
 - DeepSeek: `https://<relay-domain>/deepseek`
 - OpenRouter: `https://<relay-domain>/openrouter`
@@ -32,13 +32,17 @@ Simply point your SDK's `baseURL` to the relay:
 - Voyage AI: `https://<relay-domain>/voyage`
 - GitHub / Copilot: `https://<relay-domain>/github` (e.g. `/github/user`)
 - Google Cloud Companion / Antigravity: `https://<relay-domain>/google-companion`
+- Google CloudCode: `https://<relay-domain>/cloudcode`
 - Google Vertex AI: `https://<relay-domain>/vertex`
-- Generic Proxy: `https://<relay-domain>/proxy/<domain>/<path>`
+- Amazon Q / CodeWhisperer: `https://<relay-domain>/amazon-q`
+- Cursor: `https://<relay-domain>/cursor`
+- Kiro: `https://<relay-domain>/kiro`
+- Generic Proxy: `https://<relay-domain>/proxy/<domain>/<path>` (supports `https://`, `https/`, or raw domain)
 
 ### 2. Header-Based Routing (Gateway Proxy)
 Pass explicit target headers:
 - `x-relay-target`: `https://api.anthropic.com`
-- `x-relay-path`: `/v1/messages`
+- `x-relay-path`: `/v1/messages` (optional; automatically strips shorthand prefixes if omitted)
 
 ---
 

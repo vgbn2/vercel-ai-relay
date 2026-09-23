@@ -128,7 +128,11 @@ const PATH_PREFIX_MAP = {
   "/voyage": { target: "https://api.voyageai.com", stripPrefix: "/voyage" },
   "/github": { target: "https://api.github.com", stripPrefix: "/github" },
   "/google-companion": { target: "https://cloudaicompanion.googleapis.com", stripPrefix: "/google-companion" },
+  "/cloudcode": { target: "https://cloudcode-pa.googleapis.com", stripPrefix: "/cloudcode" },
   "/vertex": { target: "https://aiplatform.googleapis.com", stripPrefix: "/vertex" },
+  "/amazon-q": { target: "https://codewhisperer.us-east-1.amazonaws.com", stripPrefix: "/amazon-q" },
+  "/cursor": { target: "https://api2.cursor.sh", stripPrefix: "/cursor" },
+  "/kiro": { target: "https://runtime.us-east-1.kiro.dev", stripPrefix: "/kiro" },
 };
 
 // Hop-by-hop and client telemetry headers to strip before calling upstream to minimize packet size & token overhead
@@ -159,12 +163,14 @@ const HEADERS_TO_STRIP = [
   "transfer-encoding",
 ];
 
-const CORS_HEADERS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD",
-  "access-control-allow-headers": "*",
-  "access-control-max-age": "86400",
-};
+function getCorsHeaders(request) {
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD",
+    "access-control-allow-headers": "*",
+    "access-control-max-age": "86400",
+  };
+}
 
 function isDomainAllowed(targetUrl) {
   try {
@@ -189,9 +195,20 @@ function resolveRouting(request) {
   const headerTarget = request.headers.get("x-relay-target");
   const headerPath = request.headers.get("x-relay-path");
   const incomingUrl = new URL(request.url);
+  const pathname = incomingUrl.pathname;
 
   if (headerTarget) {
-    let path = headerPath || incomingUrl.pathname;
+    let path = headerPath;
+    if (!path) {
+      path = pathname;
+      // Strip matched shorthand prefix if incoming path still contains it
+      for (const [prefix, mapping] of Object.entries(PATH_PREFIX_MAP)) {
+        if (headerTarget.startsWith(mapping.target) && (path === prefix || path.startsWith(prefix + "/"))) {
+          path = path.slice(prefix.length) || "/";
+          break;
+        }
+      }
+    }
     if (incomingUrl.search && !path.includes("?")) {
       path += incomingUrl.search;
     }
@@ -202,8 +219,6 @@ function resolveRouting(request) {
   }
 
   // Path prefix routing for SDK compatibility (e.g. /anthropic/v1/messages)
-  const pathname = incomingUrl.pathname;
-
   for (const [prefix, mapping] of Object.entries(PATH_PREFIX_MAP)) {
     if (pathname === prefix || pathname.startsWith(prefix + "/")) {
       const remainingPath = pathname.slice(prefix.length) || "/";
@@ -215,14 +230,27 @@ function resolveRouting(request) {
     }
   }
 
-  // Generic /proxy/https/domain.com/path or /proxy/domain.com/path
+  // Generic /proxy/https/domain.com/path, /proxy/https://domain.com/path, or /proxy/domain.com/path
   if (pathname.startsWith("/proxy/")) {
-    const rawTarget = pathname.slice(7);
+    const rawTarget = pathname.slice(7).replace(/^https?(:\/*|\/)/, "");
     const slashIdx = rawTarget.indexOf("/");
-    const domain = (slashIdx === -1 ? rawTarget : rawTarget.slice(0, slashIdx)).replace(/^https?:\/\//, "");
+    const domain = slashIdx === -1 ? rawTarget : rawTarget.slice(0, slashIdx);
     const subPath = (slashIdx === -1 ? "/" : rawTarget.slice(slashIdx)) + incomingUrl.search;
     return {
       targetUrl: `https://${domain}${subPath}`,
+      isHealthCheck: false,
+    };
+  }
+
+  // Anthropic endpoint / header detection for standard /v1/messages & /v1/complete requests
+  if (
+    pathname.startsWith("/v1/messages") ||
+    pathname.startsWith("/v1/complete") ||
+    request.headers.has("x-api-key") ||
+    request.headers.has("anthropic-version")
+  ) {
+    return {
+      targetUrl: `https://api.anthropic.com${pathname}${incomingUrl.search}`,
       isHealthCheck: false,
     };
   }
@@ -235,7 +263,7 @@ function resolveRouting(request) {
     };
   }
 
-  // Health check endpoint
+  // Health check endpoint (/, /api, /api/health, /healthz)
   return {
     targetUrl: null,
     isHealthCheck: true,
@@ -243,11 +271,13 @@ function resolveRouting(request) {
 }
 
 export default async function handler(request) {
+  const corsHeaders = getCorsHeaders(request);
+
   // CORS Preflight Fast-Path (0ms upstream round-trip)
   if (request.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
-      headers: CORS_HEADERS,
+      headers: corsHeaders,
     });
   }
 
@@ -269,7 +299,7 @@ export default async function handler(request) {
       status: 200,
       headers: {
         "content-type": "application/json",
-        ...CORS_HEADERS,
+        ...corsHeaders,
       },
     });
   }
@@ -286,7 +316,7 @@ export default async function handler(request) {
         status: 401,
         headers: {
           "content-type": "application/json",
-          ...CORS_HEADERS,
+          ...corsHeaders,
         },
       });
     }
@@ -298,7 +328,7 @@ export default async function handler(request) {
       status: 403,
       headers: {
         "content-type": "application/json",
-        ...CORS_HEADERS,
+        ...corsHeaders,
       },
     });
   }
@@ -310,6 +340,22 @@ export default async function handler(request) {
   const newHeaders = new Headers(request.headers);
   for (const headerName of HEADERS_TO_STRIP) {
     newHeaders.delete(headerName);
+  }
+
+  // Anthropic protocol normalization:
+  // Anthropic requires x-api-key and anthropic-version. If client passed Authorization: Bearer sk-ant-... or Bearer token, convert to x-api-key.
+  if (targetHost === "api.anthropic.com") {
+    if (!newHeaders.has("anthropic-version")) {
+      newHeaders.set("anthropic-version", "2023-06-01");
+    }
+    const authHeader = newHeaders.get("authorization");
+    if (!newHeaders.has("x-api-key") && authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.slice(7).trim();
+      if (token) {
+        newHeaders.set("x-api-key", token);
+        newHeaders.delete("authorization");
+      }
+    }
   }
 
   // Zero-Trust Credential Injection:
@@ -332,7 +378,7 @@ export default async function handler(request) {
       method: request.method,
       headers: newHeaders,
     };
-    if (isBodyAllowed) {
+    if (isBodyAllowed && request.body) {
       fetchOptions.body = request.body;
       fetchOptions.duplex = "half";
     }
@@ -343,7 +389,9 @@ export default async function handler(request) {
     const responseHeaders = new Headers(response.headers);
 
     // Apply CORS headers
-    responseHeaders.set("access-control-allow-origin", "*");
+    for (const [key, val] of Object.entries(corsHeaders)) {
+      responseHeaders.set(key, val);
+    }
     responseHeaders.set("access-control-expose-headers", "*");
 
     // SSE / Streaming acceleration: prevent intermediate proxy buffering
@@ -371,7 +419,7 @@ export default async function handler(request) {
       headers: {
         "content-type": "application/json",
         "server-timing": `upstream;dur=${durationMs}`,
-        ...CORS_HEADERS,
+        ...corsHeaders,
       },
     });
   }
