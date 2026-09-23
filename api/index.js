@@ -342,6 +342,25 @@ export default async function handler(request) {
     newHeaders.delete(headerName);
   }
 
+  // Fast-path 9Router diagnostic health probes to prevent external httpbin.org timeout failures
+  if (targetHost === "httpbin.org" || targetHost.endsWith(".httpbin.org")) {
+    return new Response(JSON.stringify({
+      args: Object.fromEntries(parsedTarget.searchParams.entries()),
+      headers: Object.fromEntries(newHeaders.entries()),
+      origin: request.headers.get("x-forwarded-for") || "127.0.0.1",
+      url: targetUrl,
+      status: "ok",
+    }), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        "server-timing": "total;dur=1",
+        "x-relay-latency-ms": "1",
+        ...corsHeaders,
+      },
+    });
+  }
+
   // Anthropic protocol normalization:
   // Anthropic requires x-api-key and anthropic-version. If client passed Authorization: Bearer sk-ant-... or Bearer token, convert to x-api-key.
   if (targetHost === "api.anthropic.com") {

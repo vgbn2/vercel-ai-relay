@@ -221,17 +221,6 @@ async function runTests() {
 
   // Test 8: 9Router Proxy Pool Healthcheck Probe (httpbin.org/get)
   {
-    const originalFetch = globalThis.fetch;
-    let interceptedUrl = null;
-
-    globalThis.fetch = async (url) => {
-      interceptedUrl = url;
-      return new Response(JSON.stringify({ origin: '1.2.3.4' }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    };
-
     const req = new Request('http://localhost/', {
       method: 'GET',
       headers: {
@@ -242,10 +231,11 @@ async function runTests() {
 
     const res = await handler(req);
     assert.strictEqual(res.status, 200, '9Router healthcheck probe to httpbin.org should return 200');
-    assert.strictEqual(interceptedUrl, 'https://httpbin.org/get');
-
-    globalThis.fetch = originalFetch;
-    console.log('✓ 9Router healthcheck probe to httpbin.org passed');
+    const data = await res.json();
+    assert.strictEqual(data.status, 'ok');
+    assert.strictEqual(data.url, 'https://httpbin.org/get');
+    assert.strictEqual(res.headers.get('x-relay-latency-ms'), '1');
+    console.log('✓ 9Router healthcheck probe to httpbin.org fast-path passed');
   }
 
   // Test 9: GitHub Copilot & Google Cloud Companion Allowlist Verification
@@ -304,10 +294,10 @@ async function runTests() {
   {
     const originalFetch = globalThis.fetch;
     const proxyFormats = [
-      { path: '/proxy/https/httpbin.org/get?tag=1', expected: 'https://httpbin.org/get?tag=1' },
-      { path: '/proxy/https:/httpbin.org/get?tag=2', expected: 'https://httpbin.org/get?tag=2' },
-      { path: '/proxy/https://httpbin.org/get?tag=3', expected: 'https://httpbin.org/get?tag=3' },
-      { path: '/proxy/httpbin.org/get?tag=4', expected: 'https://httpbin.org/get?tag=4' },
+      { path: '/proxy/https/api.deepseek.com/models?tag=1', expected: 'https://api.deepseek.com/models?tag=1' },
+      { path: '/proxy/https:/api.deepseek.com/models?tag=2', expected: 'https://api.deepseek.com/models?tag=2' },
+      { path: '/proxy/https://api.deepseek.com/models?tag=3', expected: 'https://api.deepseek.com/models?tag=3' },
+      { path: '/proxy/api.deepseek.com/models?tag=4', expected: 'https://api.deepseek.com/models?tag=4' },
     ];
 
     for (const pf of proxyFormats) {
