@@ -31,6 +31,7 @@ const DEFAULT_ALLOWED_DOMAINS = new Set([
   "codewhisperer.us-east-1.amazonaws.com",
   "runtime.us-east-1.kiro.dev",
   "api2.cursor.sh",
+  "api.tavily.com",
 ]);
 
 // Map of provider hostnames to server-side environment variables and injection rules
@@ -110,6 +111,12 @@ const PROVIDER_AUTH_MAP = {
       headers.set("authorization", `Bearer ${key}`);
     },
   },
+  "api.tavily.com": {
+    envVar: "TAVILY_API_KEY",
+    inject: (headers, key) => {
+      headers.set("authorization", `Bearer ${key}`);
+    },
+  },
 };
 
 // Shorthand path prefix to upstream mapping for SDK baseURL compatibility
@@ -126,6 +133,7 @@ const PATH_PREFIX_MAP = {
   "/together": { target: "https://api.together.xyz", stripPrefix: "/together" },
   "/perplexity": { target: "https://api.perplexity.ai", stripPrefix: "/perplexity" },
   "/voyage": { target: "https://api.voyageai.com", stripPrefix: "/voyage" },
+  "/tavily": { target: "https://api.tavily.com", stripPrefix: "/tavily" },
   "/github": { target: "https://api.github.com", stripPrefix: "/github" },
   "/google-companion": { target: "https://cloudaicompanion.googleapis.com", stripPrefix: "/google-companion" },
   "/cloudcode": { target: "https://cloudcode-pa.googleapis.com", stripPrefix: "/cloudcode" },
@@ -143,6 +151,10 @@ const HEADERS_TO_STRIP = [
   "host",
   "x-forwarded-host",
   "x-forwarded-proto",
+  "x-forwarded-for",
+  "x-real-ip",
+  "cf-connecting-ip",
+  "true-client-ip",
   "x-vercel-id",
   "x-vercel-ip-country",
   "x-vercel-ip-country-region",

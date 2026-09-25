@@ -442,7 +442,42 @@ async function runTests() {
     console.log('✓ Bodyless request safe fetch options passed');
   }
 
-  console.log('\nAll 14 Expanded Zero-Trust Relay & Latency Optimizer tests passed successfully!');
+  // Test 15: /tavily/search prefix routing and domain allowlist
+  {
+    const originalFetch = globalThis.fetch;
+    let interceptedUrl = null;
+    let interceptedHeaders = null;
+
+    globalThis.fetch = async (url, options) => {
+      interceptedUrl = url;
+      interceptedHeaders = options.headers;
+      return new Response(JSON.stringify({ results: [{ title: 'Test', url: 'https://example.com' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+
+    const req = new Request('http://localhost/tavily/search', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-forwarded-for': '113.190.193.13',
+        'x-real-ip': '113.190.193.13',
+      },
+      body: JSON.stringify({ query: 'test query', api_key: 'tvly-test' }),
+    });
+
+    const res = await handler(req);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(interceptedUrl, 'https://api.tavily.com/search');
+    assert.strictEqual(interceptedHeaders.get('x-forwarded-for'), null, 'Residential IP header stripped');
+    assert.strictEqual(interceptedHeaders.get('x-real-ip'), null, 'Real IP header stripped');
+
+    globalThis.fetch = originalFetch;
+    console.log('✓ /tavily/search routing and residential IP header stripping passed');
+  }
+
+  console.log('\nAll 15 Expanded Zero-Trust Relay & Latency Optimizer tests passed successfully!');
 }
 
 runTests().catch((err) => {
